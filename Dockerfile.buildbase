@@ -163,20 +163,19 @@ RUN apt-get update && \
             libssl-dev \
             libtool \
             libboost-dev \
-            rapidjson-dev \
+            libcurl4-openssl-dev \
             libb64-dev \
             patchelf \
             python3-dev \
             python3-pip \
             python3-setuptools \
+            rapidjson-dev \
             software-properties-common \
-            libcurl4-openssl-dev \
+            wget \
             zlib1g-dev && \
     rm -rf /var/lib/apt/lists/*
 
-# Install dependencies for protobuf code generation in Python
-RUN pip3 install --upgrade wheel setuptools && \
-    pip3 install grpcio-tools
+RUN pip3 install --upgrade docker
 
 # Server build requires recent version of CMake (FetchContent required)
 RUN wget -O - https://apt.kitware.com/keys/kitware-archive-latest.asc 2>/dev/null | \
@@ -185,6 +184,10 @@ RUN wget -O - https://apt.kitware.com/keys/kitware-archive-latest.asc 2>/dev/nul
     apt-add-repository 'deb https://apt.kitware.com/ubuntu/ bionic main' && \
     apt-get update && \
     apt-get install -y --no-install-recommends cmake
+
+# BASE_IMAGE can be a tritonserver image so we must remove any
+# existing triton install before copying in the new components.
+RUN rm -fr /opt/*
 
 # Caffe2 libraries
 COPY --from=tritonserver_pytorch \
@@ -270,9 +273,16 @@ RUN cd /opt/tritonserver/backends/onnxruntime && \
         patchelf --set-rpath '$ORIGIN' $i; \
     done
 
+# Copy ONNX custom op library and model (Needed for testing)
+COPY --from=tritonserver_onnx /workspace/build/Release/libcustom_op_library.so \
+    /workspace/qa/L0_custom_ops/
+COPY --from=tritonserver_onnx /workspace/build/Release/testdata/custom_op_library/custom_op_test.onnx \
+    /workspace/qa/L0_custom_ops/
+
 WORKDIR /workspace
 RUN rm -fr *
-COPY build.py build.py
+COPY . .
+ENTRYPOINT []
 
 ENV TRITON_SERVER_VERSION ${TRITON_VERSION}
 ENV NVIDIA_TRITON_SERVER_VERSION ${TRITON_CONTAINER_VERSION}

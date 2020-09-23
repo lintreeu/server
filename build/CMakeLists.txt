@@ -46,10 +46,10 @@ option(TRITON_ENABLE_PYTHON "Include Python backend in server" OFF)
 option(TRITON_ENABLE_ENSEMBLE "Include ensemble support in server" OFF)
 
 # Endpoints
-option(TRITON_ENABLE_HTTP "Include HTTP API in server" ON)
-option(TRITON_ENABLE_GRPC "Include GRPC API in server" ON)
-option(TRITON_ENABLE_METRICS "Include metrics support in server" ON)
-option(TRITON_ENABLE_METRICS_GPU "Include GPU metrics support in server" ON)
+option(TRITON_ENABLE_HTTP "Include HTTP API in server" OFF)
+option(TRITON_ENABLE_GRPC "Include GRPC API in server" OFF)
+option(TRITON_ENABLE_METRICS "Include metrics support in server" OFF)
+option(TRITON_ENABLE_METRICS_GPU "Include GPU metrics support in server" OFF)
 
 # Cloud storage
 option(TRITON_ENABLE_GCS "Include GCS Filesystem support in server" OFF)
@@ -65,12 +65,12 @@ set(TRITON_CLIENT_CMAKE_DIR "" CACHE PATH "Path to Triton client library cmake c
 option(TRITON_CLIENT_SKIP_EXAMPLES "Skip building client examples" OFF)
 option(TRITON_CURL_WITHOUT_CONFIG "Find curl package without using cmake config" OFF)
 
-option(TRITON_ENABLE_LOGGING "Include logging support in server" ON)
-option(TRITON_ENABLE_STATS "Include statistics collections in server" ON)
+option(TRITON_ENABLE_LOGGING "Include logging support in server" OFF)
+option(TRITON_ENABLE_STATS "Include statistics collections in server" OFF)
 option(TRITON_ENABLE_TRACING "Include tracing support in server" OFF)
 option(TRITON_ENABLE_NVTX "Include NVTX support in server" OFF)
 option(TRITON_ENABLE_ASAN "Build with address sanitizer" OFF)
-option(TRITON_ENABLE_GPU "Enable GPU support in server/client" ON)
+option(TRITON_ENABLE_GPU "Enable GPU support in server/client" OFF)
 set(TRITON_MIN_COMPUTE_CAPABILITY "6.0" CACHE STRING
     "The minimum CUDA compute capability supported by Triton" )
 
