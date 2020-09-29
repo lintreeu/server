@@ -41,6 +41,10 @@ from distutils.dir_util import copy_tree
 # Build Triton Inference Server.
 #
 EXAMPLE_BACKENDS = ['identity', 'square', 'repeat']
+CORE_BACKENDS = ['pytorch', 'tensorrt', 'custom', 'ensemble', 'caffe2']
+NONCORE_BACKENDS = [
+    'tensorflow1', 'tensorflow2', 'onnxruntime', 'python', 'dali'
+]
 FLAGS = None
 
 # Map from container version to corresponding component versions
@@ -54,9 +58,9 @@ CONTAINER_VERSION_MAP = {
 def log(msg, force=False):
     if force or not FLAGS.quiet:
         try:
-            print(msg)
+            print(msg, file=sys.stderr)
         except Exception:
-            print('<failed to log>')
+            print('<failed to log>', file=sys.stderr)
 
 
 def log_verbose(msg):
@@ -70,7 +74,7 @@ def fail(msg):
 
 def fail_if(p, msg):
     if p:
-        print('error: {}'.format(msg))
+        print('error: {}'.format(msg), file=sys.stderr)
         sys.exit(1)
 
 
@@ -159,31 +163,41 @@ def core_cmake_args(components, install_dir):
     cargs.append('-DTRITON_MIN_COMPUTE_CAPABILITY={}'.format(
         FLAGS.min_compute_capability))
 
-    if FLAGS.endpoint is not None:
-        cargs.append('-DTRITON_ENABLE_GRPC:BOOL={}'.format(
-            cmake_enable('grpc' in FLAGS.endpoint)))
-        cargs.append('-DTRITON_ENABLE_HTTP:BOOL={}'.format(
-            cmake_enable('http' in FLAGS.endpoint)))
+    cargs.append('-DTRITON_ENABLE_GRPC:BOOL={}'.format(
+        cmake_enable('grpc' in FLAGS.endpoint)))
+    cargs.append('-DTRITON_ENABLE_HTTP:BOOL={}'.format(
+        cmake_enable('http' in FLAGS.endpoint)))
 
-    if FLAGS.filesystem is not None:
-        cargs.append('-DTRITON_ENABLE_GCS:BOOL={}'.format(
-            cmake_enable('gcs' in FLAGS.filesystem)))
-        cargs.append('-DTRITON_ENABLE_S3:BOOL={}'.format(
-            cmake_enable('s3' in FLAGS.filesystem)))
+    cargs.append('-DTRITON_ENABLE_GCS:BOOL={}'.format(
+        cmake_enable('gcs' in FLAGS.filesystem)))
+    cargs.append('-DTRITON_ENABLE_S3:BOOL={}'.format(
+        cmake_enable('s3' in FLAGS.filesystem)))
 
-    #    -DTRITON_ENABLE_CUSTOM=ON \
-    #    -DTRITON_ENABLE_ENSEMBLE=ON \
-    #                  -DTRITON_ENABLE_TENSORFLOW=ON \
-    #                  -DTRITON_ENABLE_TENSORRT=ON \
-    #                  -DTRITON_ENABLE_CAFFE2=ON \
-    #                  -DTRITON_ENABLE_ONNXRUNTIME=ON \
-    #                  -DTRITON_ENABLE_ONNXRUNTIME_TENSORRT=ON \
-    #                  -DTRITON_ENABLE_ONNXRUNTIME_OPENVINO=ON \
-    #                  -DTRITON_ENABLE_PYTORCH=ON \
-    #                  -DTRITON_ONNXRUNTIME_INCLUDE_PATHS="/opt/tritonserver/include/onnxruntime" \
-    #                  -DTRITON_PYTORCH_INCLUDE_PATHS="/opt/tritonserver/include/torch;/opt/tritonserver/include/torch/torch/csrc/api/include;/opt/tritonserver/include/torchvision;/usr/include/python3.6" \
-    #                  -DTRITON_EXTRA_LIB_PATHS="/opt/tritonserver/lib;/opt/tritonserver/lib/pytorch" \
+    if ('tensorflow1' in FLAGS.backend) or ('tensorflow2' in FLAGS.backend):
+        cargs.append('-DTRITON_ENABLE_TENSORFLOW={}'.format(
+            platform_backend(be).upper(), cmake_enable(True)))
 
+    for be in (CORE_BACKENDS + NONCORE_BACKENDS):
+        if not be.startswith('tensorflow'):
+            cargs.append('-DTRITON_ENABLE_{}={}'.format(
+                be.upper(), cmake_enable(be in FLAGS.backend)))
+        if (be in CORE_BACKENDS) and (be in FLAGS.backend):
+            if be == 'pytorch':
+                cargs += pytorch_cmake_args()
+            elif be == 'tensorrt':
+                pass
+            elif be == 'custom':
+                pass
+            elif be == 'ensemble':
+                pass
+            elif be == 'caffe2':
+                pass
+            else:
+                fail('unknown core backend {}'.format(be))
+
+    cargs.append(
+        '-DTRITON_EXTRA_LIB_PATHS=/opt/tritonserver/lib;/opt/tritonserver/lib/pytorch'
+    )
     cargs.append('/workspace/build')
     return cargs
 
@@ -223,6 +237,12 @@ def backend_cmake_args(components, be, install_dir):
 
     cargs.append('..')
     return cargs
+
+
+def pytorch_cmake_args():
+    return [
+        '-DTRITON_PYTORCH_INCLUDE_PATHS=/opt/tritonserver/include/torch;/opt/tritonserver/include/torch/torch/csrc/api/include;/opt/tritonserver/include/torchvision;/usr/include/python3.6',
+    ]
 
 
 def onnxruntime_cmake_args():
@@ -522,6 +542,15 @@ if __name__ == '__main__':
 
     FLAGS = parser.parse_args()
 
+    if FLAGS.repo_tag is None:
+        FLAGS.repo_tag = []
+    if FLAGS.backend is None:
+        FLAGS.backend = []
+    if FLAGS.endpoint is None:
+        FLAGS.endpoint = []
+    if FLAGS.filesystem is None:
+        FLAGS.filesystem = []
+
     # If --container-version is specified then we use
     # Dockerfile.buildbase to create the appropriate base build
     # container and then perform the actual build within that
@@ -541,29 +570,27 @@ if __name__ == '__main__':
 
     # Initialize map of common components and repo-tag for each.
     components = {'common': 'main', 'core': 'main', 'backend': 'main'}
-    if FLAGS.repo_tag:
-        for be in FLAGS.repo_tag:
-            parts = be.split(':')
-            fail_if(
-                len(parts) != 2,
-                '--repo-tag must specific <component-name>:<repo-tag>')
-            fail_if(
-                parts[0] not in components,
-                '--repo-tag <component-name> must be "common", "core", or "backend"'
-            )
-            components[parts[0]] = parts[1]
+    for be in FLAGS.repo_tag:
+        parts = be.split(':')
+        fail_if(
+            len(parts) != 2,
+            '--repo-tag must specific <component-name>:<repo-tag>')
+        fail_if(
+            parts[0] not in components,
+            '--repo-tag <component-name> must be "common", "core", or "backend"'
+        )
+        components[parts[0]] = parts[1]
     for c in components:
         log('component "{}" at tag/branch "{}"'.format(c, components[c]))
 
     # Initialize map of backends to build and repo-tag for each.
     backends = {}
-    if FLAGS.backend:
-        for be in FLAGS.backend:
-            parts = be.split(':')
-            if len(parts) == 1:
-                parts.append('main')
-            log('backend "{}" at tag/branch "{}"'.format(parts[0], parts[1]))
-            backends[parts[0]] = parts[1]
+    for be in FLAGS.backend:
+        parts = be.split(':')
+        if len(parts) == 1:
+            parts.append('main')
+        log('backend "{}" at tag/branch "{}"'.format(parts[0], parts[1]))
+        backends[parts[0]] = parts[1]
 
     # Build the core server. For now the core is contained in this
     # repo so we just build in place
@@ -582,6 +609,10 @@ if __name__ == '__main__':
 
     # Build each backend...
     for be in backends:
+        # Core backends are not built separately from core so skip...
+        if (be in CORE_BACKENDS):
+            continue
+
         repo = backend_repo(be)
         repo_build_dir = os.path.join(FLAGS.build_dir, repo, 'build')
         repo_install_dir = os.path.join(FLAGS.build_dir, repo, 'install')
